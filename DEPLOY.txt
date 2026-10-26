@@ -1,0 +1,29 @@
+Prospective Studies (Sports): deploying to Netlify
+==================================================
+
+What's in this folder
+  public/index.html                 the site
+  netlify/functions/slides.mjs      keeps the shared copy of the slides (/api/slides)
+  package.json, netlify.toml        tell Netlify how to set up the function
+
+Deploy (and every redeploy)
+  1. Log in to Netlify and open your site > Deploys.
+  2. Drag this whole "netlify-site" folder (or netlify-site.zip) onto the deploy area.
+     Always deploy the whole folder, never just index.html: each Netlify deploy
+     replaces everything, so an HTML-only deploy would remove the function.
+     The saved slide data itself is kept across deploys.
+
+Check it worked
+  Open  https://YOUR-SITE.netlify.app/api/slides
+    {"error":"nothing saved yet"}   -> function is live; press Refresh on the site once
+    a long block of data            -> function is live and has a saved copy
+    "Page not found"                -> the function didn't deploy (see below)
+
+If the function didn't deploy
+  The site still works: Refresh reads Google directly and each browser keeps its
+  own copy, as before. To get the shared copy, deploy with Netlify's command-line
+  tool instead of drag-and-drop (needs Node.js from nodejs.org):
+      cd netlify-site
+      npx netlify-cli login
+      npx netlify-cli link
+      npx netlify-cli deploy --prod
