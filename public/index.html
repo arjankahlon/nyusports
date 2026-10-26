@@ -851,6 +851,11 @@ const CRITERIA = [
       'Informed consent', 'Able/willing to follow postop protocol + f/u']]],
     exclusion: ['Prior ipsilateral knee surg', 'Concomitant ligament recon', 'Advanced OA (KL >2)',
       'Inflammatory arthritis / systemic connective tissue dz', 'MRI contraindication'] },
+  { match: /^synovial fluid biomarkers$/i,
+    inclusion: [['', ['Any knee arthroscopy, or open surgery that starts arthroscopically (e.g. ACL recon, TTO)',
+      'i.e. any knee surg except hardware removal, MUA, LOA']]],
+    exclusion: ['Inflammatory disease (diabetes ok unless poorly controlled)', 'Injection on day of sample (even if given after)',
+      'Injection within past 90 days', 'HIV / Hep C', 'Immunosuppressants (e.g. rheum pts)'] },
 ];
 const criteriaFor = s => CRITERIA.find(c => c.match.test(s.title));
 function criteriaHtml(s, cls) {
