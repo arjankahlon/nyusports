@@ -4,3 +4,10 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# Pages like /status and /screening are handled inside index.html.
+# (Functions such as /api/slides are matched before this rule; real files win too.)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
