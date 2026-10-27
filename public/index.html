@@ -237,7 +237,8 @@
   .crit ul { margin: 0 0 2px; padding-left: 15px; }
   .crit li { margin: 1px 0; }
   .slidecard .crit-full { background: var(--surface); white-space: normal; font-size: 13px; color: var(--slide-ink); }
-  @media (max-width: 420px) { .crit { grid-template-columns: 1fr; } }
+  /* stacked on phones: a blank line's worth of space before Exclusion */
+  @media (max-width: 420px) { .crit { grid-template-columns: 1fr; row-gap: 18px; } }
   .updates .h { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
   .updates ul { margin: 0; padding-left: 16px; color: var(--text-2); }
   .empty { color: var(--muted); padding: 30px; text-align: center; }
@@ -856,6 +857,15 @@ const CRITERIA = [
       'i.e. any knee surg except hardware removal, MUA, LOA']]],
     exclusion: ['Inflammatory disease (diabetes ok unless poorly controlled)', 'Injection on day of sample (even if given after)',
       'Injection within past 90 days', 'HIV / Hep C', 'Immunosuppressants (e.g. rheum pts)'] },
+  { match: /^CBD Knee OA/i,
+    inclusion: [['', ['Knee OA, KL grade 2-3', 'Knee pain for at least 3mos, on at least 1/2 of days', 'VAS ≥4', 'Age 40-75',
+      'Premenopausal women: 2 forms of birth control']]],
+    exclusion: ['Injection within past 3mos', 'Prior opioid management for knee OA, or opioid dependence', 'Cannabis abuse/dependence',
+      'Inflammatory arthritis (e.g. RA, gout, pseudogout)', 'Large effusion', 'BMI >35', 'Coagulation abnormality or thromboembolic disease',
+      'Stroke or acute coronary syndrome within 3mos',
+      'Renal failure (creatinine >2.83 mg/dL), cirrhosis, moderate/severe hepatic impairment, or abnormal LFTs',
+      'Major psych illness, substance abuse disorder, or current/past suicidal ideation', 'Major neurological disorder',
+      'Clinically significant illness (inc cardiovascular) or lab abnormalities', 'Pregnant or breastfeeding'] },
 ];
 const criteriaFor = s => CRITERIA.find(c => c.match.test(s.title));
 function criteriaHtml(s, cls) {
