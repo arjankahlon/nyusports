@@ -178,14 +178,39 @@
     border-radius: 10px; padding: 7px 12px; font: 13px Inter, sans-serif;
   }
   .viewtoggle { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-  /* filter rows: [All | OR | Office] ... [Filter by PI] / [search] [Body area] */
-  #filters.filters { display: block; margin: 22px 0 14px; }
+  /* filter rows: [All | OR | Office] ... [Filter by PI] / [search] / [Body area] [Injury] [Procedure] */
+  #filters.filters { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin: 22px 0 14px; }
   .frow { display: flex; align-items: center; gap: 8px; }
-  .frow + .frow { margin-top: 10px; }
   .frow .pidrop { margin-left: auto; }
   .frow .pidrop-filter .pimenu { left: auto; right: 0; }
   .frow .search { flex: 1 1 auto; max-width: none; margin: 0; }
   .frow .areadrop { flex: none; }
+  /* [Body area] [Injury] [Procedure], sharing the row; long picks are cut off with "..." (the open list wraps them) */
+  .frow.drops3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .drops3 .areadrop { min-width: 0; justify-content: space-between; }
+  .drops3 .areadrop > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drops3 .areadrop svg { flex: none; }
+  .drops3 .areadrop.chip { padding-left: 10px; padding-right: 7px; gap: 2px; }
+  .drops3 .tagdrop { flex: 1 1 0; min-width: 0; margin-left: 0; display: flex; }
+  .drops3 .tagdrop summary { display: flex; width: 100%; box-sizing: border-box; }
+  .drops3 .tagdrop .pimenu { top: calc(100% + 6px); }
+  .tagmenu { width: min(280px, calc(100vw - 32px)); }
+  .tagmenu .empty { padding: 10px 8px; font-size: 13px; }
+  .tagmenu label { padding-top: 6px; padding-bottom: 6px; }
+  .tagmenu label span { white-space: normal; overflow-wrap: break-word; line-height: 1.3; }
+  /* Injury (middle): centered so it stays on screen; Procedure (right): lined up on the right */
+  .drops3 .tagdrop .pimenu { left: 50%; transform: translateX(-50%); }
+  .drops3 .tagdrop + .tagdrop .pimenu { left: auto; right: 0; transform: none; }
+  /* Wider screens, two rows: [All | OR | Office] [Body area] [Injury] [Procedure] ... [Filter by PI] / [search] */
+  @media (min-width: 641px) {
+    #filters.filters { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px 8px; }
+    #filters .frow { display: contents; }
+    #filters .seg { order: 1; }
+    #filters .frow .drops3 > *, #filters .drops3 > * { order: 2; flex: none; width: 160px; margin-left: 0; }
+    #filters .frow .pidrop-filter { order: 3; }
+    #filters .frow .search { order: 4; flex: 1 0 100%; }
+    .drops3 .tagdrop .pimenu { left: 0; transform: none; }
+  }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); flex: none; }
   .seg button { border: 0; background: none; color: var(--text-2); padding: 7px 14px; font: 500 13px Inter, sans-serif; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .seg button + button { border-left: 1px solid var(--border); }
@@ -1300,7 +1325,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pill = s => `<span class="pill ${s.status}">${STATUS[s.status].icon}${esc(s.statusLabel)}</span>`;
 
-const state = { studies: [], data: null, category: 'All', setting: 'all', q: '', view: 'cards', pis: new Set(), researchers: new Set() };
+const state = { studies: [], data: null, category: 'All', procedures: new Set(), injuries: new Set(), setting: 'all', q: '', view: 'cards', pis: new Set(), researchers: new Set() };
 
 /* PI names on a study, e.g. "Bixby, Alon Shertzer (peds anesthesia)" -> ["Bixby", "Alon Shertzer"] */
 const piList = s => s.pi.split(/[,;/]|\band\b/).map(x => x.replace(/\(.*?\)/g, '').trim()).filter(Boolean);
@@ -1314,10 +1339,15 @@ function settingMatches(s) {
     (state.setting === 'office' && t.includes('Office'));
 }
 
+// Procedure / injury tags come from the master sheet; studies read from the slides have none.
+const studyTags = (s, key) => s.sheet ? s.sheet[key] : [];
+// Several picks (concomitant procedures, multiple injuries): a study shows if it has any of them.
+const tagsMatch = (s, key) => !state[key].size || studyTags(s, key).some(t => state[key].has(t));
 function filtered() {
   const q = state.q.toLowerCase();
   return state.studies.filter(s =>
     (state.category === 'All' || s.category === state.category) &&
+    tagsMatch(s, 'procedures') && tagsMatch(s, 'injuries') &&
     settingMatches(s) &&
     (!state.pis.size || piList(s).some(p => state.pis.has(p))) &&
     (!q || [s.title, s.pi, s.summary, s.updates.join(' ')].join(' ').toLowerCase().includes(q)));
@@ -1555,6 +1585,8 @@ function adminSections() {
       }).filter(Boolean)),
     { title: 'Manual adjustments that matched no slide', note: 'A slide title may have changed in the deck.',
       raw: sel.length ? [] : unmatchedOverrides().map(o => String(o.match)) },
+    { title: 'Procedures / injuries with no body area', note: "Couldn't tell their body area from the name or the studies tagged with them, so they show under every body area.",
+      raw: sel.length ? [] : unclassifiedTags() },
   ];
 }
 
@@ -1839,12 +1871,12 @@ function confetti(fromEl) {
 }
 
 function bindPiMenu(root) {
-  root.querySelectorAll('.pimenu input').forEach(cb => cb.onchange = () => {
+  root.querySelectorAll('[data-pidrop] .pimenu input').forEach(cb => cb.onchange = () => {
     cb.checked ? state.pis.add(cb.value) : state.pis.delete(cb.value);
     piChanged();
     if (cb.checked) confetti(cb.closest('details').querySelector('summary'));
   });
-  root.querySelectorAll('.piclear').forEach(b => b.onclick = () => { state.pis.clear(); piChanged(); });
+  root.querySelectorAll('[data-pidrop] .piclear').forEach(b => b.onclick = () => { state.pis.clear(); piChanged(); });
 }
 const PI_KEY = 'prospective-studies:pi-view';
 function savePis() { try { localStorage.setItem(PI_KEY, JSON.stringify([...state.pis])); } catch (e) { /* storage unavailable */ } }
@@ -1872,16 +1904,84 @@ const settingSegHtml = () => {
   return `<div class="seg">${SETTING_FILTERS.map(([k, label]) => `<button class="${state.setting === k ? 'on' : ''}" data-setting="${k}"><span class="lg">${label}</span><span class="sm">${SHORT[k]}</span></button>`).join('')}</div>`;
 };
 
+const tagsUsed = key => [...new Set(state.studies.flatMap(s => studyTags(s, key)))].sort();
+/* Choices: the master sheet's Lists tab (so a choice no study has yet still shows, with 0),
+   then any other tag already used on a study. New entries on either show up automatically. */
+const TAG_LISTS = { procedures: 'Procedures', injuries: 'Injuries / Diagnoses' };
+const OFFICE_VISIT = 'Office visit (no procedure)'; // always first; not offered under OR Studies
+function tagChoices(key) {
+  const listed = (screenLists && screenLists[TAG_LISTS[key]]) || [];
+  const all = [...listed, ...tagsUsed(key).filter(t => !listed.includes(t))];
+  const first = all.includes(OFFICE_VISIT) && state.setting !== 'or' ? [OFFICE_VISIT] : [];
+  return [...first, ...all.filter(t => t !== OFFICE_VISIT)];
+}
+/* Body area of a procedure / injury: the areas of studies tagged with it, plus a guess from
+   its name (same keywords as slide titles). TAG_AREAS overrides; 'All' = shows under every area.
+   One with no area at all also shows under every area, and is listed on the Status panel. */
+const TAG_AREAS = {
+  'Office visit (no procedure)': 'All',
+  'Malalignment (varus / valgus)': 'Knee',
+};
+function tagAreas(key, t) {
+  if (TAG_AREAS[t]) return [TAG_AREAS[t]];
+  const areas = new Set(state.studies.filter(s => studyTags(s, key).includes(t)).map(s => s.category));
+  const g = guessArea(t);
+  if (g) areas.add(g);
+  return [...areas];
+}
+// Drop picks the current body area / setting no longer offers, so no hidden filter stays on.
+const pruneTagPicks = () => Object.keys(TAG_LISTS).forEach(key =>
+  [...state[key]].filter(t => !tagInArea(key, t) || !tagChoices(key).includes(t)).forEach(t => state[key].delete(t)));
+const tagInArea = (key, t) => state.category === 'All' || [state.category, 'All'].some(a => tagAreas(key, t).includes(a)) || !tagAreas(key, t).length;
+const unclassifiedTags = () => Object.keys(TAG_LISTS).flatMap(key => tagChoices(key).filter(t => !tagAreas(key, t).length));
+/* Procedure / Injury: checkbox menus like Filter by PI, so several can be picked. */
+const TAG_MENUS = { procedures: ['Procedure', 'procedures'], injuries: ['Injury', 'injuries'] };
+function tagLabel(key) {
+  const picks = state[key], [one, many] = TAG_MENUS[key];
+  return !picks.size ? one : picks.size === 1 ? [...picks][0] : `${picks.size} ${many}`;
+}
+function tagMenuHtml(key) {
+  const opts = tagChoices(key).filter(t => tagInArea(key, t));
+  return `<details class="pidrop tagdrop" data-tags="${key}"><summary class="areadrop chip ${state[key].size ? 'on' : ''}"><span class="taglbl">${esc(tagLabel(key))}</span>${CARET}</summary>
+    <div class="pimenu tagmenu">${opts.map(t => `<label><input type="checkbox" value="${esc(t)}" ${state[key].has(t) ? 'checked' : ''}><span>${esc(t)}</span><small>${state.studies.filter(s => studyTags(s, key).includes(t)).length}</small></label>`).join('')
+      || `<div class="empty">None tagged on the master sheet yet.</div>`}
+      ${opts.length ? '<button type="button" class="piclear">Clear</button>' : ''}</div></details>`;
+}
+function bindTagMenus(root) {
+  root.querySelectorAll('[data-tags]').forEach(d => {
+    const key = d.dataset.tags;
+    const changed = () => {
+      d.querySelectorAll('input').forEach(cb => cb.checked = state[key].has(cb.value));
+      d.querySelector('.taglbl').textContent = tagLabel(key);
+      d.querySelector('summary').classList.toggle('on', state[key].size > 0);
+      renderKpis(); renderEnroll(); renderList();
+    };
+    d.querySelectorAll('input').forEach(cb => cb.onchange = () => { cb.checked ? state[key].add(cb.value) : state[key].delete(cb.value); changed(); });
+    const clear = d.querySelector('.piclear');
+    if (clear) clear.onclick = () => { state[key].clear(); changed(); };
+  });
+}
+// A chip-styled dropdown; `key` is the state field it sets ('All' = no filter).
+function dropHtml(key, label, allLabel, opts) {
+  const v = state[key];
+  return `<label class="areadrop chip ${v !== 'All' ? 'on' : ''}"><span>${v === 'All' ? label : esc(v)}</span>${CARET}
+    <select data-key="${key}" aria-label="${label}"><option value="All">${allLabel}</option>${opts.map(o => `<option value="${esc(o)}" ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
+}
 function renderFilters() {
   const cats = [...new Set(state.studies.map(s => s.category))].filter(c => !HIDDEN_CATEGORY_CHIPS.includes(c)).sort();
   $('filters').innerHTML =
-    `<div class="frow">${settingSegHtml()}
+    `<div class="frow f-set">${settingSegHtml()}
       ${piMenuHtml('filter')}</div>` +
-    `<div class="frow"><input class="search" id="q" type="search" placeholder="Search title, PI, updates" value="${esc(state.q)}">
-      <label class="areadrop chip ${state.category !== 'All' ? 'on' : ''}"><span>${state.category === 'All' ? 'Body area' : esc(state.category)}</span>${CARET}
-        <select id="areaSel" aria-label="Body area"><option value="All">All body areas</option>${cats.map(c => `<option value="${esc(c)}" ${state.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label></div>`;
-  $('areaSel').onchange = e => { state.category = e.target.value; render(); };
-  $('filters').querySelectorAll('[data-setting]').forEach(b => b.onclick = () => { state.setting = b.dataset.setting; render(); });
+    `<div class="frow f-search"><input class="search" id="q" type="search" placeholder="Search title, PI, updates" value="${esc(state.q)}"></div>` +
+    `<div class="frow f-drops drops3">${dropHtml('category', 'Body area', 'All body areas', cats)}
+      ${tagMenuHtml('injuries')}${tagMenuHtml('procedures')}</div>`;
+  $('filters').querySelectorAll('select[data-key]').forEach(sel => sel.onchange = () => {
+    state[sel.dataset.key] = sel.value;
+    pruneTagPicks(); // a body area hides the other areas' procedures / injuries
+    render();
+  });
+  bindTagMenus($('filters'));
+  $('filters').querySelectorAll('[data-setting]').forEach(b => b.onclick = () => { state.setting = b.dataset.setting; pruneTagPicks(); render(); });
   bindPiMenu($('filters'));
   const q = $('q');
   q.oninput = () => { state.q = q.value; renderList(); renderEnroll(); };
@@ -2175,6 +2275,7 @@ const initial = savedSheet() || savedLive() || SNAPSHOT;
 state.data = initial; state.studies = buildStudies(initial); restorePis(); restoreResearchers();
 load(initial);
 route();
+fetchLists().then(l => { screenLists = l; render(); }).catch(() => { /* choices from the studies' own tags only */ });
 fetchSheet().then(sheet => { load(sheet); saveSheet(sheet); }).catch(() => sharedRequest('GET').then(res => {
   if (res && res.data && new Date(res.data.syncedAt) > new Date(state.data.syncedAt)) { load(res.data); saveLive(res.data); }
 })).catch(() => { /* keep what's showing */ });
