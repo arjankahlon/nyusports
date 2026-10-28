@@ -139,6 +139,9 @@
     font-size: 12px; padding: 6px 9px; border-radius: 6px; max-width: 280px; display: none;
   }
 
+  /* Netlify adds a "Powered by Netlify" badge to every page on the free plan; keep it hidden */
+  #nl-badge-frame { display: none !important; }
+
   /* filters */
   .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin: 22px 0 14px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 auto; min-width: 0; }
@@ -637,14 +640,13 @@
   <header class="top">
     <div>
       <h1>Prospective Studies (Sports)</h1>
-      <div class="sub">From Friday research meeting slides</div>
     </div>
     <div class="actions">
       <div class="sync" id="sync"></div>
       <div class="btnrow">
         <button class="refresh" id="refreshBtn" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-          <span id="refreshLbl">Refresh from slides</span>
+          <span id="refreshLbl">Refresh data</span>
         </button>
         <div id="piHead"></div>
       </div>
