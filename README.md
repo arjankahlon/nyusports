@@ -9,12 +9,14 @@ Tracker for the NYU Langone Orthopedics sports research prospective studies, bui
 - `netlify/functions/slides.mjs` - Netlify function at `/api/slides` that pulls the deck from Google and keeps a shared copy, so each Refresh becomes the starting data for the next visitor
 - `package.json`, `netlify.toml` - tell Netlify how to set up the function
 - `DEPLOY.txt` - deploy steps
+- `sheet/` - Apps Script for the master Google Sheet, which reads the deck with the same rules as the site (setup in `sheet/SETUP.md`). Not deployed with the site.
 
 ## Working on it
 
 - `main` is the master copy. Build features on a branch and open a pull request.
 - Pull the latest `main` before starting, so nobody overwrites anyone else's work.
-- Manual adjustments to what the slides say (status overrides, nicknames, criteria, OR/Office labels, removed studies) live in `public/index.html`, matched on study titles. Search for `STUDY_OVERRIDES`, `CRITERIA`, `STUDY_SETTINGS`.
+- The site reads the master Google Sheet (`CONFIG.sheet` in `public/index.html`), which syncs itself from the slides. Manual adjustments (status overrides, nicknames, criteria, OR/Office labels, hidden studies, procedures) are the sheet's purple columns.
+- If the sheet can't be reached, the site reads the slides directly and uses the fallback lists in `public/index.html` instead: search for `STUDY_OVERRIDES`, `CRITERIA`, `STUDY_SETTINGS`.
 
 ## Deploying (manual)
 

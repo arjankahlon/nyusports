@@ -342,6 +342,24 @@
     background: var(--surface-2); color: var(--text); font-size: 26px; line-height: 1;
   }
 
+  /* screening page */
+  .scr-step { margin: 0 0 20px; }
+  .scr-label { font-weight: 600; font-size: 15px; margin: 0 0 10px; }
+  .seg.scr-modes { display: flex; width: 100%; max-width: 520px; }
+  .scr-modes button { flex: 1; padding: 9px 4px; white-space: nowrap; }
+  .scr-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .scr-opts .chip { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 7px 14px; font-size: 14px; text-align: left; }
+  .scr-opts .chip .n { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .scr-opts .chip.on .n { color: #fff; opacity: .85; }
+  .scr-opts .chip.zero:not(.on) { color: var(--muted); border-style: dashed; }
+  .scr-clear { margin-top: 10px; padding: 6px 0; border: 0; background: none; color: var(--accent); font: 600 14px Inter, sans-serif; cursor: pointer; }
+  .scr-note { margin: 0 0 18px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-2); font-size: 13px; }
+  .scr-count { font-size: 18px; margin: 6px 0 14px; }
+  .scr-match { font-size: 12.5px; font-weight: 600; color: var(--accent); }
+  .scr-group { margin-bottom: 24px; }
+  .scr-group > h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); margin: 0 0 10px; }
+  .scr-group > h3 span { color: var(--muted); font-weight: 500; margin-left: 4px; }
+
   /* breakdown page */
   .dhead {
     position: sticky; top: var(--brand-h, 0px); z-index: 2; display: flex; align-items: center; justify-content: space-between;
@@ -631,7 +649,14 @@
   <div class="suggestbar"><a class="suggest adminlink navlink" href="/status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/><path d="M18 16l2 2 3-4"/></svg>Status panel</a><a class="suggest" data-suggest><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Suggest change</a></div>
   </main>
 
-  <section id="screening" hidden></section>
+  <section id="screening" hidden>
+    <div class="dhead">
+      <button class="navbtn" type="button" id="sBack" aria-label="Back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>Back
+      </button>
+    </div>
+    <div id="sBody"></div>
+  </section>
 
   <section id="detail" hidden>
     <div class="dhead">
@@ -662,6 +687,8 @@ const CONFIG = {
   presentationId: '16LPexUG2uF_mNUndOf742ppnOXDifLltINZjpJCrvoE',
   // Section header slides whose studies are shown (case-insensitive match).
   includeSections: [/prospective/i, /grant/i],
+  // Master Google Sheet (see sheet/SETUP.md): the "Studies" tab, shared "anyone with the link".
+  sheet: { id: '1Z4yM31maUu62iZHP2vRxzlNPxrzLOVYWOC2Xyqpn-ws', gid: '1264890352' },
 };
 
 /* ---------------------------------------------------------------------------
@@ -867,7 +894,10 @@ const CRITERIA = [
       'Major psych illness, substance abuse disorder, or current/past suicidal ideation', 'Major neurological disorder',
       'Clinically significant illness (inc cardiovascular) or lab abnormalities', 'Pregnant or breastfeeding'] },
 ];
-const criteriaFor = s => CRITERIA.find(c => c.match.test(s.title));
+// From the master sheet when the study came from there; CRITERIA is for the slide fallback.
+const criteriaFor = s => s.sheet
+  ? (s.sheet.inclusion.length || s.sheet.exclusion.length ? s.sheet : undefined)
+  : CRITERIA.find(c => c.match.test(s.title));
 function criteriaHtml(s, cls) {
   const c = criteriaFor(s);
   if (!c) return '';
@@ -906,6 +936,7 @@ const STUDY_SETTINGS = [  // from Arjan, 2026-10-26
   { match: /^BEAR ACL 1-Year Outcomes$/i, setting: ['OR'] },
 ];
 function studySetting(s) {
+  if (s.sheet) return s.sheet.settings.length ? { tags: s.sheet.settings, confirmed: true } : { tags: [], confirmed: false };
   const hit = STUDY_SETTINGS.find(x => x.match.test(s.title));
   return hit ? { tags: hit.setting, confirmed: true } : { tags: [], confirmed: false }; // unlabeled: no tag, only under All Studies
 }
@@ -955,6 +986,7 @@ function isHeader(slide) {
 }
 
 function buildStudies(data) {
+  if (data.source === 'sheet') return studiesFromSheet(data.rows);
   STUDY_OVERRIDES.forEach(o => o.hits = 0);
   const studies = [];
   let section = null;
@@ -966,6 +998,104 @@ function buildStudies(data) {
     if (!study.excluded) studies.push(study);
   }
   return studies;
+}
+
+/* ---------------------------------------------------------------------------
+   MASTER SHEET: the Google Sheet that sheet/Code.gs keeps in step with the deck.
+   Each row holds what the slide reader above produces, plus the team's columns
+   (nickname, overrides, OR/Office, criteria, procedures...), so
+   STUDY_OVERRIDES, NICKNAMES, STUDY_SETTINGS and CRITERIA only apply when the
+   sheet can't be reached and the page reads the slides instead.
+--------------------------------------------------------------------------- */
+const SHEET_CSV = () => `https://docs.google.com/spreadsheets/d/${CONFIG.sheet.id}/export?format=csv&gid=${CONFIG.sheet.gid}`;
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = '', quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c !== '"') field += c;
+      else if (text[i + 1] === '"') { field += '"'; i++; }
+      else quoted = false;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n') { row.push(field.replace(/\r$/, '')); rows.push(row); row = []; field = ''; }
+    else field += c;
+  }
+  if (field || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+// "2026-10-28 9:05" (the sheet's Last seen format) -> Date
+function sheetDate(text) {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})(?: (\d{1,2}):(\d{2}))?/.exec(text || '');
+  return m ? new Date(+m[1], m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)) : null;
+}
+
+async function fetchSheet() {
+  const res = await fetch(SHEET_CSV(), { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Google returned ${res.status} for the master sheet. Is it still shared with "anyone with the link"?`);
+  const [head, ...body] = parseCsv(await res.text());
+  if (!head || !head.includes('Slide ID')) throw new Error("The master sheet doesn't have the expected columns.");
+  const rows = body.map(r => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ''])));
+  const last = Math.max(0, ...rows.map(r => +(sheetDate(r['Last seen in deck']) || 0)));
+  return { source: 'sheet', syncedAt: new Date(last).toISOString(), rows };
+}
+
+const cellLines = t => String(t || '').split('\n').map(s => s.trim()).filter(Boolean);
+const cellList = t => String(t || '').split(',').map(s => s.trim()).filter(Boolean);
+
+/* Built from the slide columns plus the team's columns, the same way the sheet fills
+   its Study/Status/Area/PI/Enrolled/Target columns. Those are only recalculated when
+   the sheet syncs, so reading them would hide the team's edits until the next sync. */
+function sheetToStudy(r) {
+  const slideTitle = r['Slide title'];
+  const nick = r['Nickname'].trim();
+  const title = nick
+    ? `${nick} (${slideTitle.replace(new RegExp('\\s*\\(' + nick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\)\\s*$', 'i'), '')})`
+    : slideTitle;
+  const statusText = r['Status on slide'], sk = statusKey(statusText);
+  const override = { active: 'active', paused: 'paused', 'not ready yet': 'notready' }[r['Status override'].trim().toLowerCase()];
+  const status = override || (sk === 'active' || sk === 'paused' ? sk : 'notready');
+  const areaOverride = r['Area override'].trim(), guessed = guessArea(slideTitle);
+  let details = r['Details box (full text)'];
+  const slidePI = parseFields(details).pi || '';
+  const extraPIs = cellList(r['Extra PIs']).filter(p => !piList({ pi: slidePI }).includes(p));
+  const pi = [slidePI, ...extraPIs].filter(Boolean).join(', ');
+  if (extraPIs.length) details = details.replace(/^(\s*PI\s*:\s*)(.*)$/im, (m, k) => k + pi);
+  let n = parseN(r['Enrollment line on slide']);
+  if (r['N on slide is target'] === 'TRUE' && n && !n.target) n = { enrolled: 0, target: n.enrolled, note: '', raw: n.raw };
+  const inclusion = []; // [[group label, items]]; a line ending in ":" starts a group
+  for (const line of cellLines(r['Inclusion criteria'])) {
+    if (line.endsWith(':')) inclusion.push([line.slice(0, -1), []]);
+    else { if (!inclusion.length) inclusion.push(['', []]); inclusion[inclusion.length - 1][1].push(line); }
+  }
+  const updates = cellLines(r['Updates']);
+  return {
+    slide: Number(r['Slide #']), slideId: r['Slide ID'], section: r['Section'],
+    title,
+    category: areaOverride || r['Area on slide'] || guessed || 'Other',
+    areaSource: areaOverride ? 'manual' : r['Area on slide'] ? 'slide' : guessed ? 'guessed' : 'none',
+    statusText, status, statusManual: !!override,
+    statusLabel: !override && (sk === 'active' || sk === 'paused') ? statusText : STATUS[status].label,
+    pi, summary: r['Summary'], irb: r['IRB #'], irbEnd: r['IRB end date'],
+    criteria: r['Inclusion/Exclusion on slide'],
+    n, updates,
+    sheet: { inclusion, exclusion: cellLines(r['Exclusion criteria']), settings: cellList(r['Setting (OR / Office)']),
+      procedures: cellList(r['Procedures']), injuries: cellList(r['Injuries / Diagnoses']) },
+    parts: {
+      category: r['Area on slide'], status: statusText, title: slideTitle,
+      updates: updates.length ? ['Updates:', ...updates].join('\n') : '',
+      details, other: r['Other slide text'] ? [r['Other slide text']] : [],
+    },
+  };
+}
+
+// Rows on the site: linked to a slide still in the deck, and not ticked "Hide from site".
+function studiesFromSheet(rows) {
+  return rows.filter(r => r['Slide ID'] && r['Sync status'] === 'In deck' && r['Hide from site'] !== 'TRUE')
+    .map(sheetToStudy).sort((a, b) => a.slide - b.slide);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1155,6 +1285,12 @@ function savedLive() {
     const d = JSON.parse(localStorage.getItem(SAVED_KEY) || 'null');
     return d && d.slides && new Date(d.syncedAt) > new Date(SNAPSHOT.syncedAt) ? d : null;
   } catch (e) { return null; }
+}
+/* Likewise the last read of the master sheet, shown at once while a fresh read loads. */
+const SHEET_KEY = 'prospective-studies:sheet';
+function saveSheet(data) { try { localStorage.setItem(SHEET_KEY, JSON.stringify(data)); } catch (e) { /* storage unavailable */ } }
+function savedSheet() {
+  try { const d = JSON.parse(localStorage.getItem(SHEET_KEY) || 'null'); return d && d.rows ? d : null; } catch (e) { return null; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1418,7 +1554,7 @@ function adminSections() {
         return gaps.length ? [s, gaps.join(' · ')] : null;
       }).filter(Boolean)),
     { title: 'Manual adjustments that matched no slide', note: 'A slide title may have changed in the deck.',
-      raw: sel.length ? [] : STUDY_OVERRIDES.filter(o => !o.hits).map(o => String(o.match)) },
+      raw: sel.length ? [] : unmatchedOverrides().map(o => String(o.match)) },
   ];
 }
 
@@ -1591,6 +1727,7 @@ function route() {
   $('screening').hidden = key !== 'screening';
   setStatusMode(key === 'admin');
   if (valid) { renderDetail(key); window.scrollTo(0, 0); }
+  else if (key === 'screening') { renderScreening(); window.scrollTo(0, 0); }
   else if (state.homeScroll != null) { window.scrollTo(0, state.homeScroll); }
 }
 function goHome() {
@@ -1750,7 +1887,7 @@ function renderFilters() {
   q.oninput = () => { state.q = q.value; renderList(); renderEnroll(); };
 }
 
-function card(s) {
+function card(s, note = '') {
   const n = s.n;
   const prog = n ? (n.target
       ? `<div class="prog"><div class="lbl"><span>Enrollment</span><b>${n.enrolled} / ${n.target} · ${Math.round(n.enrolled / n.target * 100)}%</b></div>${barFill(s)}</div>`
@@ -1760,6 +1897,7 @@ function card(s) {
     <div class="row1">${pill(s)}${settingTag(s)}<span class="tag">${esc(s.category)}</span>${/grant/i.test(s.section) ? '<span class="tag sec">Grant</span>' : ''}
       <button class="slidelink" type="button" data-slide="${s.slide}">View details</button></div>
     <h3>${esc(s.title)}</h3>
+    ${note}
     ${reasonHtml(s)}
     <div class="meta">
       ${s.pi ? `<div><b>PI:</b> ${esc(s.pi)}</div>` : ''}
@@ -1774,9 +1912,101 @@ function card(s) {
 function renderList() {
   const rows = filtered().sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || a.slide - b.slide);
   if (!rows.length) { $('list').innerHTML = '<div class="empty">No studies match these filters.</div>'; return; }
-  $('list').innerHTML = `<div class="grid">${rows.map(card).join('')}</div>`;
-  $('list').querySelectorAll('.summary').forEach(el => el.onclick = () => el.classList.toggle('open'));
-  $('list').querySelectorAll('[data-slide]').forEach(b => b.onclick = () => openSlide(+b.dataset.slide));
+  $('list').innerHTML = `<div class="grid">${rows.map(s => card(s)).join('')}</div>`;
+  bindCards($('list'));
+}
+function bindCards(root) {
+  root.querySelectorAll('.summary').forEach(el => el.onclick = () => el.classList.toggle('open'));
+  root.querySelectorAll('[data-slide]').forEach(b => b.onclick = () => openSlide(+b.dataset.slide));
+}
+
+/* ---------------------------------------------------------------------------
+   SCREEN MY PATIENTS: pick what a patient is having done (or has, or where
+   they're seen) to see the studies that could enroll them. The choices come
+   from the master sheet's Lists tab, plus any tag already used on a study;
+   studies are matched on their sheet columns. Nothing picked leaves the page.
+--------------------------------------------------------------------------- */
+const SCREEN_MODES = [
+  { key: 'procedures', tab: 'Procedure', list: 'Procedures', ask: 'My patient is getting a:', what: 'procedures',
+    tags: s => s.sheet ? s.sheet.procedures : [] },
+  { key: 'injuries', tab: 'Injury', list: 'Injuries / Diagnoses', ask: 'My patient has:', what: 'injuries or diagnoses',
+    tags: s => s.sheet ? s.sheet.injuries : [] },
+  { key: 'setting', tab: 'Setting', list: 'Setting', ask: "I'm seeing my patient in the:", what: 'an OR / Office setting',
+    tags: s => studySetting(s).tags },
+  { key: 'area', tab: 'Body area', list: 'Area', ask: "My patient's injury is in the:", what: 'a body area',
+    tags: s => [s.category] },
+];
+const SCREEN_GROUPS = { active: 'Enrolling now', paused: 'Paused', notready: 'Not enrolling yet' };
+state.screen = { mode: 'procedures', picks: new Set() };
+let screenLists = null; // {Lists tab column: [choices]}; {} if it couldn't be read
+
+async function fetchLists() {
+  const res = await fetch(`https://docs.google.com/spreadsheets/d/${CONFIG.sheet.id}/gviz/tq?tqx=out:csv&sheet=Lists`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Google returned ${res.status} for the Lists tab`);
+  const [head, ...rows] = parseCsv(await res.text());
+  return Object.fromEntries(head.map((h, i) => [h.trim(), rows.map(r => (r[i] || '').trim()).filter(Boolean)]));
+}
+
+function renderScreening() {
+  if (screenLists === null) {
+    screenLists = undefined; // loading
+    fetchLists().catch(() => ({})).then(l => { screenLists = l; if (!$('screening').hidden) renderScreening(); });
+  }
+  const mode = SCREEN_MODES.find(m => m.key === state.screen.mode);
+  const picks = state.screen.picks;
+  const S = state.studies;
+  const listed = (screenLists && screenLists[mode.list]) || [];
+  const used = [...new Set(S.flatMap(mode.tags))].filter(t => !listed.includes(t)).sort();
+  const opts = [...listed, ...used];
+  const count = t => S.filter(s => mode.tags(s).includes(t)).length;
+  const matched = s => mode.tags(s).filter(t => picks.has(t));
+  const hits = S.filter(s => matched(s).length);
+
+  const untagged = S.filter(s => !mode.tags(s).length).length;
+  let note = '';
+  if ((mode.key === 'procedures' || mode.key === 'injuries') && state.data.source !== 'sheet') {
+    note = 'The master sheet couldn\'t be reached, so procedure and injury tags aren\'t available right now. Try Refresh on the home page.';
+  } else if (mode.key !== 'area' && untagged) {
+    note = `${untagged} of ${S.length} studies don't have ${mode.what} filled in on the master sheet yet, so they won't show up here.`;
+  }
+
+  let results;
+  if (!picks.size) results = '<div class="empty">Pick one or more above to see matching studies.</div>';
+  else if (!hits.length) results = `<div class="empty">No studies are tagged with ${[...picks].map(esc).join(' or ')} yet.</div>`;
+  else {
+    results = `<h3 class="scr-count">${hits.length} ${hits.length === 1 ? 'study' : 'studies'}</h3>` +
+      STATUS_ORDER.map(k => {
+        const g = hits.filter(s => s.status === k).sort(bySlide);
+        return g.length ? `<div class="scr-group"><h3>${SCREEN_GROUPS[k]} <span>${g.length}</span></h3>
+          <div class="grid">${g.map(s => card(s, `<div class="scr-match">Matches: ${matched(s).map(esc).join(', ')}</div>`)).join('')}</div></div>` : '';
+      }).join('');
+  }
+
+  $('sBody').innerHTML = `<h2 class="dtitle">Screen my patients</h2>
+    <p class="dsub">Pick what applies to your patient to see which studies could enroll them. Nothing you pick is saved or sent anywhere.</p>
+    <div class="scr-step"><div class="scr-label">Filter by</div>
+      <div class="seg scr-modes">${SCREEN_MODES.map(m => `<button type="button" class="${m === mode ? 'on' : ''}" data-mode="${m.key}">${m.tab}</button>`).join('')}</div></div>
+    <div class="scr-step"><div class="scr-label">${esc(mode.ask)}</div>
+      <div class="scr-opts">${opts.map(t => {
+        const n = count(t), on = picks.has(t);
+        return `<button type="button" class="chip ${on ? 'on' : ''} ${n ? '' : 'zero'}" data-pick="${esc(t)}" aria-pressed="${on}">${esc(t)}<span class="n">${n}</span></button>`;
+      }).join('') || `<span class="empty">${screenLists === undefined ? 'Loading choices…' : 'No choices on the Lists tab yet.'}</span>`}</div>
+      ${picks.size ? '<button class="scr-clear" type="button" id="scrClear">Clear</button>' : ''}</div>
+    ${note ? `<p class="scr-note">${esc(note)}</p>` : ''}
+    ${results}`;
+
+  $('sBody').querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
+    if (b.dataset.mode === state.screen.mode) return;
+    state.screen = { mode: b.dataset.mode, picks: new Set() };
+    renderScreening();
+  });
+  $('sBody').querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+    const t = b.dataset.pick;
+    picks.has(t) ? picks.delete(t) : picks.add(t);
+    renderScreening();
+  });
+  if ($('scrClear')) $('scrClear').onclick = () => { picks.clear(); renderScreening(); };
+  bindCards($('sBody'));
 }
 
 /* Researchers from the NYU Sports Researchers 26-27 face sheet (photos from it too; Lilah
@@ -1859,7 +2089,7 @@ function render() {
   renderKpis(); renderEnroll(); renderFilters(); renderPiHead(); renderList();
   const d = state.data;
   const when = new Date(d.syncedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-  $('sync').innerHTML = `${d.source === 'live' ? 'Updated from slides' : 'Snapshot'} · ${when}`;
+  $('sync').innerHTML = `${{ sheet: 'Synced from slides', live: 'Updated from slides' }[d.source] || 'Snapshot'} · ${when}`;
 }
 
 /* Suggest change: opens a pre-addressed email */
@@ -1874,17 +2104,20 @@ function suggestHref(study) {
 }
 document.querySelectorAll('[data-suggest]').forEach(a => a.href = suggestHref());
 
+// The sheet carries its own adjustments, so the code's list only matters for slide data.
+const unmatchedOverrides = () => state.data.source === 'sheet' ? [] : STUDY_OVERRIDES.filter(o => !o.hits);
 function load(data) {
   state.data = data;
   state.studies = buildStudies(data);
   render();
-  const unmatched = STUDY_OVERRIDES.filter(o => !o.hits);
+  const unmatched = unmatchedOverrides();
   if (unmatched.length) {
     $('notice').innerHTML = `Some manual adjustments didn't match any slide, so they weren't applied (a title may have changed in the deck): ${unmatched.map(o => `<code>${esc(String(o.match))}</code>`).join(', ')}`;
     $('notice').classList.add('show');
   }
   const key = currentPage();
   if (key && !$('detail').hidden) renderDetail(key);
+  if (!$('screening').hidden) renderScreening();
 }
 
 /* tooltip */
@@ -1906,6 +2139,9 @@ $('refreshBtn').onclick = async () => {
   btn.disabled = true; btn.classList.add('spin');
   lbl.textContent = 'Checking slides…';
   try {
+    // The master sheet first (it syncs from the slides on its own); the slides if it can't be read.
+    const sheet = await fetchSheet().catch(() => null);
+    if (sheet) { load(sheet); saveSheet(sheet); return; }
     const shared = await sharedRequest('POST');
     const data = shared && shared.data
       ? shared.data
@@ -1928,18 +2164,20 @@ $('refreshBtn').onclick = async () => {
 document.addEventListener('click', e => document.querySelectorAll('details.pidrop[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; }));
 $('dBack').onclick = goHome;
 $('dClose').onclick = goHome;
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('detail').hidden && !$('viewer').open) goHome(); });
+$('sBack').onclick = goHome;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && (!$('detail').hidden || !$('screening').hidden) && !$('viewer').open) goHome(); });
 $('viewer').addEventListener('click', e => { if (e.target === $('viewer')) $('viewer').close(); }); // tap backdrop to close
 $('viewer').addEventListener('close', () => document.documentElement.classList.remove('locked'));
 const brandEl = document.querySelector('.brand');
 const setBrandH = () => document.documentElement.style.setProperty('--brand-h', brandEl.offsetHeight + 'px');
 new ResizeObserver(setBrandH).observe(brandEl); setBrandH();
-state.studies = buildStudies(savedLive() || SNAPSHOT); restorePis(); restoreResearchers();
-load(savedLive() || SNAPSHOT);
+const initial = savedSheet() || savedLive() || SNAPSHOT;
+state.data = initial; state.studies = buildStudies(initial); restorePis(); restoreResearchers();
+load(initial);
 route();
-sharedRequest('GET').then(res => {
+fetchSheet().then(sheet => { load(sheet); saveSheet(sheet); }).catch(() => sharedRequest('GET').then(res => {
   if (res && res.data && new Date(res.data.syncedAt) > new Date(state.data.syncedAt)) { load(res.data); saveLive(res.data); }
-}).catch(() => { /* keep what's showing */ });
+})).catch(() => { /* keep what's showing */ });
 </script>
 </body>
 </html>
