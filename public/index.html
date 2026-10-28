@@ -345,16 +345,29 @@
   /* screening page */
   .scr-step { margin: 0 0 20px; }
   .scr-label { font-weight: 600; font-size: 15px; margin: 0 0 10px; }
-  .seg.scr-modes { display: flex; width: 100%; max-width: 520px; }
-  .scr-modes button { flex: 1; padding: 9px 4px; white-space: nowrap; }
+  .scr-num {
+    display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-right: 8px;
+    border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; vertical-align: 1px;
+  }
+  .scr-ask { margin-top: 14px; }
+  .seg.scr-kinds { display: flex; width: 100%; max-width: 360px; }
+  .scr-kinds button { flex: 1; padding: 9px 4px; white-space: nowrap; }
+  .scr-badge {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px;
+    border-radius: 9px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700;
+  }
+  .scr-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; color: var(--text-2); font-size: 13px; }
+  .scr-summary .scr-link { margin: 0 0 0 6px; }
+  .scr-step .scr-note { margin: 14px 0 0; }
   .scr-opts { display: flex; flex-wrap: wrap; gap: 8px; }
   .scr-opts .chip { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 7px 14px; font-size: 14px; text-align: left; }
   .scr-opts .chip .n { font-size: 12px; font-weight: 700; color: var(--muted); }
   .scr-opts .chip.on .n { color: #fff; opacity: .85; }
   .scr-opts .chip.zero:not(.on) { color: var(--muted); border-style: dashed; }
-  .scr-clear { margin-top: 10px; padding: 6px 0; border: 0; background: none; color: var(--accent); font: 600 14px Inter, sans-serif; cursor: pointer; }
+  .scr-link { margin-top: 10px; padding: 6px 0; border: 0; background: none; color: var(--accent); font: 600 14px Inter, sans-serif; cursor: pointer; }
   .scr-note { margin: 0 0 18px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-2); font-size: 13px; }
-  .scr-count { font-size: 18px; margin: 6px 0 14px; }
+  .scr-count { font-size: 18px; margin: 6px 0 10px; }
+  .scr-results { padding-top: 18px; border-top: 1px solid var(--border); }
   .scr-match { font-size: 12.5px; font-weight: 600; color: var(--accent); }
   .scr-group { margin-bottom: 24px; }
   .scr-group > h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); margin: 0 0 10px; }
@@ -654,6 +667,7 @@
       <button class="navbtn" type="button" id="sBack" aria-label="Back">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>Back
       </button>
+      <div class="dslot" id="sSlot"></div>
     </div>
     <div id="sBody"></div>
   </section>
@@ -1921,23 +1935,19 @@ function bindCards(root) {
 }
 
 /* ---------------------------------------------------------------------------
-   SCREEN MY PATIENTS: pick what a patient is having done (or has, or where
-   they're seen) to see the studies that could enroll them. The choices come
-   from the master sheet's Lists tab, plus any tag already used on a study;
-   studies are matched on their sheet columns. Nothing picked leaves the page.
+   SCREEN MY PATIENTS: a short questionnaire that narrows the studies down step by
+   step: OR/Office (the switch by Back, shared with the rest of the site), then body
+   area, then procedures and/or injuries. A study has to match every answer given;
+   within procedures (or injuries) any one of the picks is enough. Choices come from
+   the master sheet's Lists tab plus any tag already used on a study, and each shows
+   how many studies it would leave. Nothing picked leaves the page.
 --------------------------------------------------------------------------- */
-const SCREEN_MODES = [
-  { key: 'procedures', tab: 'Procedure', list: 'Procedures', ask: 'My patient is getting a:', what: 'procedures',
-    tags: s => s.sheet ? s.sheet.procedures : [] },
-  { key: 'injuries', tab: 'Injury', list: 'Injuries / Diagnoses', ask: 'My patient has:', what: 'injuries or diagnoses',
-    tags: s => s.sheet ? s.sheet.injuries : [] },
-  { key: 'setting', tab: 'Setting', list: 'Setting', ask: "I'm seeing my patient in the:", what: 'an OR / Office setting',
-    tags: s => studySetting(s).tags },
-  { key: 'area', tab: 'Body area', list: 'Area', ask: "My patient's injury is in the:", what: 'a body area',
-    tags: s => [s.category] },
+const SCREEN_KINDS = [
+  { key: 'procedures', tab: 'Procedure', list: 'Procedures', ask: 'My patient is getting a:', what: 'procedures' },
+  { key: 'injuries', tab: 'Injury', list: 'Injuries / Diagnoses', ask: 'My patient has:', what: 'injuries or diagnoses' },
 ];
 const SCREEN_GROUPS = { active: 'Enrolling now', paused: 'Paused', notready: 'Not enrolling yet' };
-state.screen = { mode: 'procedures', picks: new Set() };
+state.screen = { area: '', kind: 'procedures', picks: { procedures: new Set(), injuries: new Set() }, showAll: false };
 let screenLists = null; // {Lists tab column: [choices]}; {} if it couldn't be read
 
 async function fetchLists() {
@@ -1947,66 +1957,95 @@ async function fetchLists() {
   return Object.fromEntries(head.map((h, i) => [h.trim(), rows.map(r => (r[i] || '').trim()).filter(Boolean)]));
 }
 
+const screenTags = (s, kind) => s.sheet ? s.sheet[kind] : [];
+const anyPicked = (tags, picks) => !picks.size || tags.some(t => picks.has(t));
+// Lists tab order first, then tags only found on studies.
+const screenChoices = (list, used) => { const l = (screenLists && screenLists[list]) || []; return [...l, ...[...new Set(used)].filter(t => !l.includes(t)).sort()]; };
+const scrChip = (attr, t, n, on) =>
+  `<button type="button" class="chip ${on ? 'on' : ''} ${n ? '' : 'zero'}" ${attr}="${esc(t)}" aria-pressed="${on}">${esc(t)}<span class="n">${n}</span></button>`;
+
 function renderScreening() {
   if (screenLists === null) {
     screenLists = undefined; // loading
     fetchLists().catch(() => ({})).then(l => { screenLists = l; if (!$('screening').hidden) renderScreening(); });
   }
-  const mode = SCREEN_MODES.find(m => m.key === state.screen.mode);
-  const picks = state.screen.picks;
-  const S = state.studies;
-  const listed = (screenLists && screenLists[mode.list]) || [];
-  const used = [...new Set(S.flatMap(mode.tags))].filter(t => !listed.includes(t)).sort();
-  const opts = [...listed, ...used];
-  const count = t => S.filter(s => mode.tags(s).includes(t)).length;
-  const matched = s => mode.tags(s).filter(t => picks.has(t));
-  const hits = S.filter(s => matched(s).length);
+  const sc = state.screen;
+  $('sSlot').innerHTML = settingSegHtml();
+  $('sSlot').querySelectorAll('[data-setting]').forEach(b => b.onclick = () => { state.setting = b.dataset.setting; render(); renderScreening(); });
 
-  const untagged = S.filter(s => !mode.tags(s).length).length;
+  // 1. body area, among the studies in the chosen setting
+  const inSetting = state.studies.filter(settingMatches);
+  const areaCount = a => inSetting.filter(s => s.category === a).length;
+  const areas = screenChoices('Area', inSetting.map(s => s.category)).filter(a => areaCount(a) || a === sc.area);
+  const inArea = inSetting.filter(s => s.category === sc.area);
+
+  // 2. procedure / injury: counts take the other kind's picks into account
+  const kind = SCREEN_KINDS.find(k => k.key === sc.kind);
+  const picks = sc.picks[kind.key];
+  const pool = inArea.filter(s => SCREEN_KINDS.every(k => k === kind || anyPicked(screenTags(s, k.key), sc.picks[k.key])));
+  const count = t => pool.filter(s => screenTags(s, kind.key).includes(t)).length;
+  const all = screenChoices(kind.list, pool.flatMap(s => screenTags(s, kind.key)));
+  const shown = sc.showAll ? all : all.filter(t => count(t) || picks.has(t));
+  const empties = all.filter(t => !count(t) && !picks.has(t)).length;
+
   let note = '';
-  if ((mode.key === 'procedures' || mode.key === 'injuries') && state.data.source !== 'sheet') {
-    note = 'The master sheet couldn\'t be reached, so procedure and injury tags aren\'t available right now. Try Refresh on the home page.';
-  } else if (mode.key !== 'area' && untagged) {
-    note = `${untagged} of ${S.length} studies don't have ${mode.what} filled in on the master sheet yet, so they won't show up here.`;
+  if (state.data.source !== 'sheet') {
+    note = "The master sheet couldn't be reached, so procedure and injury tags aren't available right now. Try Refresh on the home page.";
+  } else {
+    const untagged = inArea.filter(s => !screenTags(s, kind.key).length).length;
+    if (untagged) note = `${untagged} of ${inArea.length} ${sc.area.toLowerCase()} studies don't have ${kind.what} filled in on the master sheet yet, so picking one here leaves them out.`;
   }
 
-  let results;
-  if (!picks.size) results = '<div class="empty">Pick one or more above to see matching studies.</div>';
-  else if (!hits.length) results = `<div class="empty">No studies are tagged with ${[...picks].map(esc).join(' or ')} yet.</div>`;
-  else {
-    results = `<h3 class="scr-count">${hits.length} ${hits.length === 1 ? 'study' : 'studies'}</h3>` +
-      STATUS_ORDER.map(k => {
+  // results: every answer has to match
+  const hits = inArea.filter(s => SCREEN_KINDS.every(k => anyPicked(screenTags(s, k.key), sc.picks[k.key])));
+  const matched = s => SCREEN_KINDS.flatMap(k => screenTags(s, k.key).filter(t => sc.picks[k.key].has(t)));
+  const criteria = [sc.area, state.setting !== 'all' && (state.setting === 'or' ? 'OR' : 'Office'),
+    ...SCREEN_KINDS.map(k => [...sc.picks[k.key]].join(' or '))].filter(Boolean);
+  let results = '';
+  if (sc.area) {
+    results = `<div class="scr-results"><h3 class="scr-count">${hits.length} ${hits.length === 1 ? 'study' : 'studies'}</h3>
+      <div class="scr-summary">${criteria.map(c => `<span class="settag">${esc(c)}</span>`).join('')}<button class="scr-link" type="button" id="scrReset">Start over</button></div>` +
+      (hits.length ? STATUS_ORDER.map(k => {
         const g = hits.filter(s => s.status === k).sort(bySlide);
         return g.length ? `<div class="scr-group"><h3>${SCREEN_GROUPS[k]} <span>${g.length}</span></h3>
-          <div class="grid">${g.map(s => card(s, `<div class="scr-match">Matches: ${matched(s).map(esc).join(', ')}</div>`)).join('')}</div></div>` : '';
-      }).join('');
+          <div class="grid">${g.map(s => card(s, matched(s).length ? `<div class="scr-match">Matches: ${matched(s).map(esc).join(', ')}</div>` : '')).join('')}</div></div>` : '';
+      }).join('') : '<div class="empty">No studies match all of these. Try removing a pick.</div>') + '</div>';
   }
 
   $('sBody').innerHTML = `<h2 class="dtitle">Screen my patients</h2>
-    <p class="dsub">Pick what applies to your patient to see which studies could enroll them. Nothing you pick is saved or sent anywhere.</p>
-    <div class="scr-step"><div class="scr-label">Filter by</div>
-      <div class="seg scr-modes">${SCREEN_MODES.map(m => `<button type="button" class="${m === mode ? 'on' : ''}" data-mode="${m.key}">${m.tab}</button>`).join('')}</div></div>
-    <div class="scr-step"><div class="scr-label">${esc(mode.ask)}</div>
-      <div class="scr-opts">${opts.map(t => {
-        const n = count(t), on = picks.has(t);
-        return `<button type="button" class="chip ${on ? 'on' : ''} ${n ? '' : 'zero'}" data-pick="${esc(t)}" aria-pressed="${on}">${esc(t)}<span class="n">${n}</span></button>`;
-      }).join('') || `<span class="empty">${screenLists === undefined ? 'Loading choices…' : 'No choices on the Lists tab yet.'}</span>`}</div>
-      ${picks.size ? '<button class="scr-clear" type="button" id="scrClear">Clear</button>' : ''}</div>
-    ${note ? `<p class="scr-note">${esc(note)}</p>` : ''}
+    <p class="dsub">Answer what you know to narrow down which studies could enroll your patient. Nothing you pick is saved or sent anywhere.</p>
+    <div class="scr-step"><div class="scr-label"><span class="scr-num">1</span>Which body area?</div>
+      <div class="scr-opts">${areas.map(a => scrChip('data-area', a, areaCount(a), sc.area === a)).join('') ||
+        `<span class="empty">${screenLists === undefined ? 'Loading choices…' : 'No studies in this setting.'}</span>`}</div></div>
+    ${sc.area ? `<div class="scr-step"><div class="scr-label"><span class="scr-num">2</span>Narrow it down by</div>
+      <div class="seg scr-kinds">${SCREEN_KINDS.map(k => `<button type="button" class="${k === kind ? 'on' : ''}" data-kind="${k.key}">${k.tab}${
+        sc.picks[k.key].size ? `<span class="scr-badge">${sc.picks[k.key].size}</span>` : ''}</button>`).join('')}</div>
+      <div class="scr-label scr-ask">${esc(kind.ask)}</div>
+      <div class="scr-opts">${shown.map(t => scrChip('data-pick', t, count(t), picks.has(t))).join('') ||
+        `<span class="empty">No ${kind.what} tagged on these studies yet.</span>`}</div>
+      ${empties ? `<button class="scr-link" type="button" id="scrMore">${sc.showAll ? 'Hide choices with no studies' : `Show ${empties} more with no studies yet`}</button>` : ''}
+      ${note ? `<p class="scr-note">${esc(note)}</p>` : ''}</div>` : ''}
     ${results}`;
 
-  $('sBody').querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
-    if (b.dataset.mode === state.screen.mode) return;
-    state.screen = { mode: b.dataset.mode, picks: new Set() };
+  const S = $('sBody');
+  S.querySelectorAll('[data-area]').forEach(b => b.onclick = () => {
+    sc.area = sc.area === b.dataset.area ? '' : b.dataset.area;
+    SCREEN_KINDS.forEach(k => sc.picks[k.key].clear()); // last area's picks may not apply
+    sc.showAll = false;
     renderScreening();
   });
-  $('sBody').querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+  S.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { sc.kind = b.dataset.kind; sc.showAll = false; renderScreening(); });
+  S.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
     const t = b.dataset.pick;
     picks.has(t) ? picks.delete(t) : picks.add(t);
     renderScreening();
   });
-  if ($('scrClear')) $('scrClear').onclick = () => { picks.clear(); renderScreening(); };
-  bindCards($('sBody'));
+  if ($('scrMore')) $('scrMore').onclick = () => { sc.showAll = !sc.showAll; renderScreening(); };
+  if ($('scrReset')) $('scrReset').onclick = () => {
+    sc.area = ''; sc.showAll = false; SCREEN_KINDS.forEach(k => sc.picks[k.key].clear());
+    renderScreening(); window.scrollTo(0, 0);
+  };
+  bindCards(S);
 }
 
 /* Researchers from the NYU Sports Researchers 26-27 face sheet (photos from it too; Lilah
