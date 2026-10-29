@@ -78,8 +78,7 @@
   .notice code { background: var(--surface); padding: 1px 5px; border-radius: 4px; }
 
   /* KPI tiles */
-  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-  @media (min-width: 641px) and (max-width: 860px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpis .kpi:nth-child(n+4) { grid-column: span 1; } }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
   .kpi {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
     padding: 14px 16px; box-shadow: var(--shadow);
@@ -617,7 +616,6 @@
     .sync { text-align: left; }
     button.refresh { justify-content: center; }
     .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
-    .kpis .kpi:first-child { grid-column: 1 / -1; }
     .kpi { padding: 12px; }
     .kpi .value { font-size: 24px; }
     .erow { grid-template-columns: 1fr auto; grid-template-areas: "nm val" "bar bar"; gap: 4px 10px; padding: 6px 4px; }
@@ -1416,13 +1414,13 @@ function renderKpis() {
   const sfN = sf ? sf.n.enrolled : 0;
   const tile = (route, label, value, note, dot) => `<a class="kpi navlink" href="${pageHref(route)}"><div class="label">${dot ? `<span class="dot" style="background:${dot}"></span>` : ''}${label}<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></div><div class="value">${value}</div>${note ? `<div class="note">${note}</div>` : ''}</a>`;
   $('kpis').innerHTML =
+    // phones: [Total | Patients enrolled] / [Active | Paused]. No Not ready yet tile (its page still exists).
     tile('studies', M('Total Prospective Studies'), S.length, '') +
-    tile('active', M('Active'), c('active'), '', STATUS.active.color) +
-    tile('paused', M('Paused'), c('paused'), '', STATUS.paused.color) +
-    tile('notready', my ? 'My Not Ready Yet' : 'Not ready yet', c('notready'), '', STATUS.notready.color) +
     // with a PI selected, the total includes Synovial Fluid when it's one of theirs
     (my ? tile('enrolled', 'My Studies\' Patients Enrolled', enrolled.toLocaleString(), '')
-        : tile('enrolled', 'Patients enrolled', (enrolled - sfN).toLocaleString(), sfN ? `+ ${sfN.toLocaleString()} Synovial Fluid pts` : ''));
+        : tile('enrolled', 'Patients enrolled', (enrolled - sfN).toLocaleString(), sfN ? `+ ${sfN.toLocaleString()} Synovial Fluid pts` : '')) +
+    tile('active', M('Active'), c('active'), '', STATUS.active.color) +
+    tile('paused', M('Paused'), c('paused'), '', STATUS.paused.color);
 }
 
 /* Enrollment pie: the 7 largest studies get their own color; the rest fold into "Other". */
