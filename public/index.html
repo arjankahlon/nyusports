@@ -369,6 +369,40 @@
     background: var(--surface-2); color: var(--text); font-size: 26px; line-height: 1;
   }
 
+  /* researcher of the week (/researcherOTW, not linked from anywhere) */
+  .awards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 32px; margin: 8px 0 40px; }
+  .plaque {
+    position: relative; padding: 20px; border-radius: 18px;
+    background: linear-gradient(145deg, #6b4528, #3b2414 55%, #5a3a22);
+    box-shadow: 0 18px 40px rgba(30, 15, 5, .35), inset 0 2px 0 rgba(255, 255, 255, .15);
+  }
+  .plaque-in {
+    padding: 30px 22px 26px; border-radius: 10px; text-align: center; color: #3d2a08;
+    background: linear-gradient(160deg, #f7e7a1, #d4ad4c 45%, #f3dc8a 60%, #b8892f);
+    border: 3px solid #8a6420; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .45), inset 0 -6px 18px rgba(120, 80, 10, .35);
+  }
+  .plaque .screw { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff6d0, #a77b2a 70%); }
+  .plaque .screw:nth-child(1) { top: 7px; left: 7px; } .plaque .screw:nth-child(2) { top: 7px; right: 7px; }
+  .plaque .screw:nth-child(3) { bottom: 7px; left: 7px; } .plaque .screw:nth-child(4) { bottom: 7px; right: 7px; }
+  .plaque-kicker { font: 700 12px Inter, sans-serif; letter-spacing: .22em; text-transform: uppercase; }
+  .plaque-title { margin: 6px 0 20px; font: 700 30px/1.15 Georgia, 'Times New Roman', serif; text-shadow: 0 1px 0 rgba(255, 255, 255, .5); }
+  /* the whole photo, uncropped, in a frame */
+  .plaque-photo {
+    display: block; max-width: 100%; max-height: 520px; width: auto; height: auto; margin: 0 auto; border-radius: 6px; background: #e9d8a6;
+    border: 6px solid #8a6420; box-shadow: 0 0 0 3px #f7e7a1, 0 8px 20px rgba(60, 35, 5, .35);
+  }
+  span.plaque-photo { display: flex; align-items: center; justify-content: center; width: 220px; height: 220px; font: 700 80px Georgia, serif; color: #8a6420; }
+  .plaque-name { margin: 18px 0 2px; font: 700 28px/1.2 Georgia, 'Times New Roman', serif; }
+  .plaque-note { margin: 12px auto 0; max-width: 34ch; font: italic 16px/1.4 Georgia, serif; }
+  .plaque-week { margin-top: 16px; font: 600 12px Inter, sans-serif; letter-spacing: .14em; text-transform: uppercase; opacity: .75; }
+  /* the booby prize: tarnished plate, hung crooked */
+  .plaque.worst { transform: rotate(-1.5deg); background: linear-gradient(145deg, #4a3a30, #2a201a 55%, #3d3027); }
+  .plaque.worst .plaque-in { color: #2a2015; background: linear-gradient(160deg, #cbbba2, #8f7a5e 45%, #b9a487 60%, #6f5b42); border-color: #4e3d28; }
+  .plaque.worst .plaque-photo { border-color: #4e3d28; box-shadow: 0 0 0 3px #cbbba2, 0 8px 20px rgba(30, 20, 10, .35); filter: sepia(.35) saturate(.8); }
+  .plaque.worst .screw { background: radial-gradient(circle at 35% 35%, #e0d6c4, #5c4a36 70%); }
+  .plaque.worst .screw:nth-child(2) { top: 14px; transform: rotate(40deg); } /* a loose one */
+  @media (max-width: 640px) { .plaque-title { font-size: 25px; } .plaque-photo { max-height: 420px; } span.plaque-photo { width: 180px; height: 180px; } .plaque-name { font-size: 24px; } }
+
   /* screening page */
   .scr-step { margin: 0 0 20px; }
   .scr-label { font-weight: 600; font-size: 15px; margin: 0 0 10px; }
@@ -695,6 +729,15 @@
       <div class="dslot" id="sSlot"></div>
     </div>
     <div id="sBody"></div>
+  </section>
+
+  <section id="awards" hidden>
+    <div class="dhead">
+      <button class="navbtn" type="button" id="aBack" aria-label="Back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>Back
+      </button>
+    </div>
+    <div id="aBody"></div>
   </section>
 
   <section id="detail" hidden>
@@ -1754,26 +1797,28 @@ function setStatusMode(on) {
    catch-all rewrite (netlify.toml) serves this file for them. Opened as a file, the
    page falls back to #/status style addresses. Old #/ links still work. */
 const PAGE_KEYS = { studies: 'studies', active: 'active', paused: 'paused', notready: 'notready', enrolled: 'enrolled',
-  status: 'admin', admin: 'admin', screening: 'screening' };
+  status: 'admin', admin: 'admin', screening: 'screening', researcherotw: 'awards' };
 const usePaths = /^https?:$/.test(location.protocol);
 function currentPage() {
   const fromHash = (location.hash.match(/^#\/(\w+)/) || [])[1];
   const seg = usePaths ? (location.pathname.replace(/^\/+|\/+$/g, '').split('/')[0] || fromHash) : fromHash;
-  return PAGE_KEYS[seg] || null;
+  return PAGE_KEYS[(seg || '').toLowerCase()] || null;
 }
-const pageHref = key => { const seg = key === 'admin' ? 'status' : key; return usePaths ? `/${seg}` : `#/${seg}`; };
+const pageHref = key => { const seg = { admin: 'status', awards: 'researcherOTW' }[key] || key; return usePaths ? `/${seg}` : `#/${seg}`; };
 if (usePaths && /^#\/\w+/.test(location.hash) && currentPage()) history.replaceState(null, '', pageHref(currentPage()) + location.search);
 if (!usePaths) document.querySelectorAll('a.navlink, a.homelink').forEach(a => { a.href = a.classList.contains('homelink') ? '#' : pageHref(PAGE_KEYS[a.getAttribute('href').slice(1)]); });
 
 function route() {
   const key = currentPage();
   const valid = ['studies', 'active', 'paused', 'notready', 'enrolled', 'admin'].includes(key);
-  $('home').hidden = valid || key === 'screening';
+  $('home').hidden = valid || key === 'screening' || key === 'awards';
   $('detail').hidden = !valid;
   $('screening').hidden = key !== 'screening';
+  $('awards').hidden = key !== 'awards';
   setStatusMode(key === 'admin');
   if (valid) { renderDetail(key); window.scrollTo(0, 0); }
   else if (key === 'screening') { renderScreening(); window.scrollTo(0, 0); }
+  else if (key === 'awards') { renderAwards(); window.scrollTo(0, 0); }
   else if (state.homeScroll != null) { window.scrollTo(0, state.homeScroll); }
 }
 function goHome() {
@@ -2148,6 +2193,75 @@ function renderScreening() {
   bindCards(S);
 }
 
+/* ---------------------------------------------------------------------------
+   RESEARCHER OF THE WEEK: /researcherOTW, reachable only by typing the address.
+   Reads the master sheet's "Awards" tab: one row per winner (several rows with the
+   same award give several plaques), with columns
+     Award        "Researcher of the Week" or "Worst Researcher of the Week" (any row with "worst" in it)
+     Researcher   a name; first names on the team list get their headshot automatically
+     Photo        optional: a Google Drive share link (file shared "anyone with the link") or any image address
+     Note         optional: a line shown under the name
+     Week of      optional: e.g. Nov 3
+--------------------------------------------------------------------------- */
+const AWARDS = [
+  { key: 'best', cls: '', kicker: 'NYU Sports Research', title: 'Researcher of the Week' },
+  { key: 'worst', cls: 'worst', kicker: '', title: 'Worst Researcher of the Week' },
+];
+let awardRows = null; // rows of the Awards tab; [] if it couldn't be read
+
+async function fetchAwards() {
+  const res = await fetch(`https://docs.google.com/spreadsheets/d/${CONFIG.sheet.id}/gviz/tq?tqx=out:csv&sheet=Awards`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Google returned ${res.status} for the Awards tab`);
+  const [head, ...rows] = parseCsv(await res.text());
+  const h = (head || []).map(x => x.trim());
+  if (!h.includes('Award')) return []; // no Awards tab: Google sends the first tab instead
+  return rows.map(r => Object.fromEntries(h.map((k, i) => [k, (r[i] || '').trim()])));
+}
+
+// Drive share links ("/file/d/ID/view", "open?id=ID") -> an address an <img> can show.
+function drivePhoto(link) {
+  const id = (/\/d\/([\w-]{20,})/.exec(link) || /[?&]id=([\w-]{20,})/.exec(link) || [])[1];
+  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w800` : link;
+}
+
+function plaqueHtml(a, row) {
+  const name = row ? row['Researcher'] : '';
+  const first = name.split(/\s+/)[0].toLowerCase();
+  const r = RESEARCHERS.find(x => x.name.toLowerCase() === first || x.aliases.includes(first));
+  const photo = row && row['Photo'] ? drivePhoto(row['Photo']) : r && r.photo;
+  return `<div class="plaque ${a.cls}"><span class="screw"></span><span class="screw"></span><span class="screw"></span><span class="screw"></span>
+    <div class="plaque-in">
+      ${a.kicker ? `<div class="plaque-kicker">${a.kicker}</div>` : ''}
+      <h2 class="plaque-title">${a.title}</h2>
+      ${photo ? `<img class="plaque-photo" src="${esc(photo)}" alt="${esc(name)}" referrerpolicy="no-referrer">` /* Drive refuses images to pages that send a referrer */ : `<span class="plaque-photo">${esc(name ? name[0].toUpperCase() : '?')}</span>`}
+      <div class="plaque-name">${esc(name || 'To be announced')}</div>
+      ${row && row['Note'] ? `<p class="plaque-note">${esc(row['Note'])}</p>` : ''}
+      ${row && row['Week of'] ? `<div class="plaque-week">Week of ${esc(row['Week of'])}</div>` : ''}
+    </div></div>`;
+}
+
+function renderAwards() {
+  if (awardRows === null) {
+    awardRows = undefined; // loading
+    fetchAwards().catch(() => []).then(rows => { awardRows = rows; if (!$('awards').hidden) renderAwards(); });
+  }
+  // One plaque per winner (a row with a name), in sheet order; "To be announced" if an award has none.
+  const winners = a => (awardRows || []).filter(r => r['Award'] && r['Researcher'] && /worst/i.test(r['Award']) === (a.key === 'worst'));
+  $('aBody').innerHTML = `<div class="awards">${AWARDS.map(a => {
+    const rows = winners(a);
+    return rows.length ? rows.map(r => plaqueHtml(a, r)).join('') : plaqueHtml(a, null);
+  }).join('')}</div>` +
+    (awardRows === undefined ? '<div class="empty">Loading…</div>' : '');
+  // Drive occasionally fails a thumbnail: try once more, then show the initial instead.
+  $('aBody').querySelectorAll('img.plaque-photo').forEach(img => {
+    img.onerror = () => {
+      if (!img.dataset.retried) { img.dataset.retried = '1'; setTimeout(() => { img.src += (img.src.includes('?') ? '&' : '?') + 'r=' + Date.now(); }, 800); return; }
+      img.replaceWith(Object.assign(document.createElement('span'), { className: 'plaque-photo', textContent: (img.alt || '?')[0].toUpperCase() }));
+    };
+    if (img.complete && !img.naturalWidth) img.onerror(); // failed before the handler was set
+  });
+}
+
 /* Researchers from the NYU Sports Researchers 26-27 face sheet (photos from it too; Lilah
    and Hannah have no photo yet). aliases = first names as written on slide Team lines. */
 const RESEARCHERS = [  // first names only
@@ -2304,7 +2418,8 @@ document.addEventListener('click', e => document.querySelectorAll('details.pidro
 $('dBack').onclick = goHome;
 $('dClose').onclick = goHome;
 $('sBack').onclick = goHome;
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && (!$('detail').hidden || !$('screening').hidden) && !$('viewer').open) goHome(); });
+$('aBack').onclick = goHome;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && (!$('detail').hidden || !$('screening').hidden || !$('awards').hidden) && !$('viewer').open) goHome(); });
 $('viewer').addEventListener('click', e => { if (e.target === $('viewer')) $('viewer').close(); }); // tap backdrop to close
 $('viewer').addEventListener('close', () => document.documentElement.classList.remove('locked'));
 const brandEl = document.querySelector('.brand');
